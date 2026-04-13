@@ -26,16 +26,18 @@ def fetchMovieNfo(m, f) {
 			status(i.status)
 
 			ratings {
-				rating(name: 'themoviedb', max: '10') {
+				rating(name: 'tmdb', max: '10', default: 'true') {
 					value(i.rating)
 					votes(i.votes)
 				}
 			}
 
-			if (i.collection) {
-				set(id: m.collection.id) {
-					name(m.collection.name)
-					overview(m.collection.overview)
+			if (Settings.ApplicationRevisionNumber > 10960) {
+				if (i.collection) {
+					set(id: m.collection.id) {
+						name(m.collection.name)
+						overview(m.collection.overview)
+					}
 				}
 			}
 
@@ -67,10 +69,10 @@ def fetchMovieNfo(m, f) {
 			fileFragment(delegate, f)
 
 			if (i.imdbId) {
-				imdb(id:'tt' + i.imdbId.pad(7), 'https://www.imdb.com/title/tt' + i.imdbId.pad(7))
+				imdb(id: 'tt' + i.imdbId.pad(7), 'https://www.imdb.com/title/tt' + i.imdbId.pad(7))
 			}
-			tmdb(id:i.id, 'https://www.themoviedb.org/movie/' + i.id)
-			uniqueid(type:'tmdb', default:'true', i.id)
+			tmdb(id: i.id, 'https://www.themoviedb.org/movie/' + i.id)
+			uniqueid(type: 'tmdb', default: 'true', i.id)
 		}
 	}
 
@@ -94,20 +96,29 @@ def fetchSeriesNfo(m, f) {
 
 	log.info "Generate Series NFO: $m.seriesInfo [$nfoFile]"
 	def s = m.seriesInfo.details
+	def db = db(s.database)
 
 	def xml = XML {
 		tvshow {
 			id(s.id)
 			title(s.name)
+			sorttitle([s.name, s.startDate].findResults{ it?.toString()?.sortName() }.join(' :: '))
 			year(s.startDate?.year)
-			rating(s.rating)
-			votes(s.ratingCount)
+			premiered(s.startDate)
+			mpaa(s.certification)
 			plot(s.overview)
 			runtime(s.runtime)
-			mpaa(s.certification)
-			premiered(s.startDate)
+
+			ratings {
+				rating(name: db, max: '10', default: 'true') {
+					value(s.rating)
+					votes(s.ratingCount)
+				}
+			}
+
 			status(s.status)
 			studio(s.network)
+
 			episodeguide(s.id)
 
 			s.episodes.collectEntries{ e -> [e.episode ? e.season : 0, e.group] }.each{ seasonNumber, seasonName ->
@@ -138,12 +149,17 @@ def fetchSeriesNfo(m, f) {
 			certificationFragment(delegate, s)
 			crewFragment(delegate, s)
 
-			if (s.database == 'TheTVDB') {
-				uniqueid(type:'tvdb', default:'true', s.id)
+			if (s.database =~ /TheMovieDB/) {
+				tmdb(id: s.id, 'https://www.themoviedb.org/tv/' + s.id)
 			}
-			if (s.database == 'TheMovieDB::TV') {
-				uniqueid(type:'tmdb', default:'true', s.id)
+			if (s.database =~ /TheTVDB/) {
+				tvdb(id: s.id, 'https://thetvdb.com/series/' + s.slug)
 			}
+			if (s.database =~ /AniDB/) {
+				anidb(id: s.id, 'https://anidb.net/anime/' + s.id)
+			}
+
+			uniqueid(type: db, default: 'true', s.id)
 		}
 	}
 
@@ -187,12 +203,7 @@ def fetchEpisodeNfo(m, f) {
 				crewFragment(delegate, e)
 				fileFragment(delegate, f)
 
-				if (s.database == 'TheTVDB') {
-					uniqueid(type:'tvdb', default:'true', series: s.id, season: e.season, episode: e.episode, e.id)
-				}
-				if (s.database == 'TheMovieDB::TV') {
-					uniqueid(type:'tmdb', default:'true', series: s.id, season: e.season, episode: e.episode, e.id)
-				}
+				uniqueid(type: db(s.database), default: 'true', series: s.id, season: e.season, episode: e.episode, e.id)
 			}
 		}
 	}
@@ -209,25 +220,25 @@ def fetchEpisodeNfo(m, f) {
 
 def crewFragment(element, info) {
 	info.crew.each{ p ->
-		if (p.director) {
-			element.director(p.name)
-		} else if (p.writer) {
-			element.credits(p.name)
-		} else if (p.actor) { 
+		if (p.actor) { 
 			element.actor {
 				name(p.name)
 				if (p.character) {
 					role(p.character)
 				}
-				if (p.order) {
-					order(p.order)
+				if (Settings.ApplicationRevisionNumber > 10960) {
+					if (p.order >= 0) {
+						order(p.order)
+					}
 				}
 				if (p.image) {
 					thumb(p.image)
 				}
 			}
-		} else if (p.department == 'Writing') {
-			element.credits("$p.name ($p.job)")
+		} else if (p.director) {
+			element.director(p.name)
+		} else if (p.writer || p.department == 'Writing') {
+			element.credits(p.name)
 		}
 	}
 }
@@ -248,11 +259,14 @@ def fileFragment(element, file) {
 	def mi = file.mediaInfo
 
 	element.fileinfo {
+		name(file.name)
+		size(file.length())
+
 		streamdetails {
 			mi.Video.each{ s ->
 				video {
 					codec(s.'Encoded_Library/Name' ?: s.'CodecID/Hint' ?: s.'Format')
-					aspect(s.'DisplayAspectRatio')
+					aspect(s.'DisplayAspectRatio/String')
 					width(s.'Width')
 					height(s.'Height')
 					hdrtype(s.'HDR_Format_Commercial' ?: s.'HDR_Format')
@@ -271,11 +285,17 @@ def fileFragment(element, file) {
 			}
 			mi.Text.each{ s ->
 				subtitle {
+					codec(s.'Format')
 					language(s.'Language/String3')
 				}
 			}
 		}
 	}
+}
+
+
+def db(database) {
+	return database.match('TheMovieDB':'tmdb', 'TheTVDB':'tvdb', 'AniDB':'anidb', 'TVmaze':'tvmaze')
 }
 
 

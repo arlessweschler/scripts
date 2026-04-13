@@ -136,35 +136,106 @@ def fetchSeriesFanart(outputFile, series, type, season, override, locale) {
 	return fanart.url.cache().saveAs(outputFile)
 }
 
-def fetchSeriesNfo(outputFile, i, locale) {
+def fetchSeriesNfo(outputFile, s, locale) {
 	// generate nfo file
-	log.finest "Generate Series NFO: $i.name [$i]"
+	log.finest "Generate Series NFO: $s.name [$s]"
+	def db = s.database.match('TheMovieDB':'tmdb', 'TheTVDB':'tvdb', 'AniDB':'anidb', 'TVmaze':'tvmaze')
 	def xml = XML {
 		tvshow {
-			title(i.name)
-			sorttitle([i.name, i.startDate].findResults{ it?.toString()?.sortName() }.join(' :: '))
-			year(i.startDate?.year)
-			rating(i.rating)
-			votes(i.ratingCount)
-			plot(i.overview)
-			runtime(i.runtime)
-			mpaa(i.certification)
-			id(i.id)
-			i.genres.each{
-				genre(it)
+			id(s.id)
+			title(s.name)
+			sorttitle([s.name, s.startDate].findResults{ it?.toString()?.sortName() }.join(' :: '))
+			year(s.startDate?.year)
+			premiered(s.startDate)
+			mpaa(s.certification)
+			plot(s.overview)
+			runtime(s.runtime)
+
+			ratings {
+				rating(name: db, max: '10', default: 'true') {
+					value(s.rating)
+					votes(s.ratingCount)
+				}
 			}
-			premiered(i.startDate)
-			status(i.status)
-			studio(i.network)
-			episodeguide(i.id)
-			tvdb(id:i.id, 'https://thetvdb.com/series/' + i.slug)
+
+			status(s.status)
+			studio(s.network)
+
+			episodeguide(s.id)
+
+			s.episodes.collectEntries{ e -> [e.episode ? e.season : 0, e.group] }.each{ seasonNumber, seasonName ->
+				if (seasonName) {
+					namedseason(number: seasonNumber, seasonName)
+				}
+			}
+
+			s.genres.each{ g ->
+				genre(g)
+			}
+			s.country.each{ c ->
+				country(c)
+			}
+
+			s.artwork.findAll{ a -> a.matches(/posters/) }.take(1).each{ a ->
+				thumb(aspect: 'poster', a.url)
+			}
+			s.artwork.findAll{ a -> a.matches(/logos/) }.take(1).each{ a ->
+				thumb(aspect: 'clearlogo', a.url)
+			}
+			s.artwork.findAll{ a -> a.matches(/backdrops/) }.take(1).each{ a ->
+				fanart {
+					thumb(a.url)
+				}
+			}
+
+			s.certifications.each{ k, v ->
+				certification {
+					country(k)
+					rating(v)
+				}
+			}
+
+			s.crew.each{ p ->
+				if (p.actor) {
+					actor {
+						name(p.name)
+						if (p.character) {
+							role(p.character)
+						}
+						if (Settings.ApplicationRevisionNumber > 10960) {
+							if (p.order >= 0) {
+								order(p.order)
+							}
+						}
+						if (p.image) {
+							thumb(p.image)
+						}
+					}
+				} else if (p.director) {
+					director(p.name)
+				} else if (p.writer || p.department == 'Writing') {
+					credits(p.name)
+				}
+			}
+
+			if (s.database =~ /TheMovieDB/) {
+				tmdb(id: s.id, 'https://www.themoviedb.org/tv/' + s.id)
+			}
+			if (s.database =~ /TheTVDB/) {
+				tvdb(id: s.id, 'https://thetvdb.com/series/' + s.slug)
+			}
+			if (s.database =~ /AniDB/) {
+				anidb(id: s.id, 'https://anidb.net/anime/' + s.id)
+			}
+
+			uniqueid(type: db, default: 'true', s.id)
 		}
 	}
 
 	xml.saveAs(outputFile)
 }
 
-def getSeriesID(series, locale) {
+def getTVDBID(series, locale) {
 	if (series.database =~ /TheTVDB/) {
 		return TheTVDB.getSeriesInfo(series.id, locale)
 	}
@@ -179,39 +250,45 @@ def getSeriesID(series, locale) {
 
 def fetchSeriesArtworkAndNfo(seriesDir, seasonDir, series, season, override = false, locale = Locale.ENGLISH) {
 	tryLogCatch {
-		def sid = getSeriesID(series, locale)
-
-		if (sid == null) {
-			log.finest "Artwork not supported: $series"
+		def details = series.details
+		if (details == null) {
+			log.finest "NFO not supported: $series"
 			return
 		}
 
 		// fetch nfo
-		fetchSeriesNfo(seriesDir.resolve('tvshow.nfo'), sid, locale)
+		fetchSeriesNfo(seriesDir.resolve('tvshow.nfo'), details, locale)
 
 		// primary poster as folder image
-		fetchPrimaryPoster(sid.poster, seriesDir.resolve('folder.jpg'))
+		fetchPrimaryPoster(details.poster, seriesDir.resolve('folder.jpg'))
+
+		// artwork types are mostly sourced from TheTVDB
+		def tvdbid = getTVDBID(series, locale)
+		if (tvdbid == null) {
+			log.finest "Artwork not supported: $series"
+			return
+		}
 
 		// series artwork
-		fetchSeriesBanner(seriesDir.resolve('poster.jpg'), sid, 'posters', 'series', null, override, locale)
-		fetchSeriesBanner(seriesDir.resolve('banner.jpg'), sid, 'banners', 'series', null, override, locale)
-		fetchSeriesBanner(seriesDir.resolve('fanart.jpg'), sid, 'backgrounds', 'series', null, override, locale)
+		fetchSeriesBanner(seriesDir.resolve('poster.jpg'), tvdbid, 'posters', 'series', null, override, locale)
+		fetchSeriesBanner(seriesDir.resolve('banner.jpg'), tvdbid, 'banners', 'series', null, override, locale)
+		fetchSeriesBanner(seriesDir.resolve('fanart.jpg'), tvdbid, 'backgrounds', 'series', null, override, locale)
 
 		// season artwork
 		if (seasonDir != seriesDir) {
-			fetchSeriesBanner(seasonDir.resolve('folder.jpg'), sid, 'posters', 'season', season, override, locale)
-			fetchSeriesBanner(seasonDir.resolve('poster.jpg'), sid, 'posters', 'season', season, override, locale)
-			fetchSeriesBanner(seasonDir.resolve('banner.jpg'), sid, 'banners', 'season', season, override, locale)
+			fetchSeriesBanner(seasonDir.resolve('folder.jpg'), tvdbid, 'posters', 'season', season, override, locale)
+			fetchSeriesBanner(seasonDir.resolve('poster.jpg'), tvdbid, 'posters', 'season', season, override, locale)
+			fetchSeriesBanner(seasonDir.resolve('banner.jpg'), tvdbid, 'banners', 'season', season, override, locale)
 		}
 
 		// external series artwork
-		['hdclearart', 'clearart'].findResult{ type -> fetchSeriesFanart(seriesDir.resolve('clearart.png'), sid, type, null, override, locale) }
-		['hdtvlogo', 'clearlogo'].findResult{ type -> fetchSeriesFanart(seriesDir.resolve('logo.png'), sid, type, null, override, locale) }
-		fetchSeriesFanart(seriesDir.resolve('landscape.jpg'), sid, 'tvthumb', null, override, locale)
+		['hdclearart', 'clearart'].findResult{ type -> fetchSeriesFanart(seriesDir.resolve('clearart.png'), tvdbid, type, null, override, locale) }
+		['hdtvlogo', 'clearlogo'].findResult{ type -> fetchSeriesFanart(seriesDir.resolve('logo.png'), tvdbid, type, null, override, locale) }
+		fetchSeriesFanart(seriesDir.resolve('landscape.jpg'), tvdbid, 'tvthumb', null, override, locale)
 
 		// external season artwork
 		if (seasonDir != seriesDir) {
-			fetchSeriesFanart(seasonDir.resolve('landscape.jpg'), sid, 'seasonthumb', season, override, locale)
+			fetchSeriesFanart(seasonDir.resolve('landscape.jpg'), tvdbid, 'seasonthumb', season, override, locale)
 		}
 	}
 }
@@ -254,75 +331,131 @@ def fetchMovieFanart(outputFile, movieInfo, type, diskType, override, locale) {
 	return fanart.url.cache().saveAs(outputFile)
 }
 
-def fetchMovieNfo(outputFile, i, movieFile) {
+def fetchMovieNfo(outputFile, m, i, movieFile) {
 	log.finest "Generate Movie NFO: $i.name [$i.id]"
 	def mi = tryLogCatch{ movieFile?.mediaInfo }
 	def xml = XML {
 		movie {
+			id(i.id)
 			title(i.name)
 			originaltitle(i.originalName)
 			sorttitle((i.collection && i.released ? [i.collection, i.released, i.name] : [i.name, i.released]).findResults{ it?.toString()?.sortName() }.join(' :: '))
-			set(i.collection)
 			year(i.released?.year)
-			rating(i.rating)
-			votes(i.votes)
+			premiered(i.released)
 			mpaa(i.certification)
-			id('tt' + (i.imdbId ?: 0).pad(7))
 			plot(i.overview)
 			tagline(i.tagline)
 			runtime(i.runtime)
-			i.genres.each{
-				genre(it)
-			}
-			i.keywords.each{
-				tag(it)
-			}
-			i.productionCountries.each{
-				country(it)
-			}
-			i.productionCompanies.each{
-				studio(it)
-			}
-			i.people.each{ p ->
-				if (p.director) {
-					director(p.name)
-				} else if (p.writer) {
-					credits(p.name)
-				} else if (p.actor) { 
-					actor {
-						name(p.name)
-						role(p.character)
-					}
-				} else if (p.department == 'Writing') {
-					credits("$p.name ($p.job)")
+			status(i.status)
+
+			ratings {
+				rating(name: 'tmdb', max: '10', default: 'true') {
+					value(i.rating)
+					votes(i.votes)
 				}
 			}
+
+			if (Settings.ApplicationRevisionNumber > 10960) {
+				if (i.collection) {
+					set(id: m.collection.id) {
+						name(m.collection.name)
+						overview(m.collection.overview)
+					}
+				}
+			}
+
+			i.genres.each{ g ->
+				genre(g)
+			}
+			i.keywords.each{ k ->
+				tag(k)
+			}
+			i.productionCountries.each{ c ->
+				country(c)
+			}
+			i.productionCompanies.each{ c ->
+				studio(c)
+			}
+
+			m.artwork.findAll{ a -> a.matches(/posters/) }.take(1).each{ a ->
+				thumb(aspect: 'poster', a.url)
+			}
+
+			m.artwork.findAll{ a -> a.matches(/backdrops/) }.take(1).each{ a ->
+				fanart {
+					thumb(a.url)
+				}
+			}
+
+			i.certifications.each{ k, v ->
+				certification {
+					country(k)
+					rating(v)
+				}
+			}
+
+			i.crew.each{ p ->
+				if (p.actor) {
+					actor {
+						name(p.name)
+						if (p.character) {
+							role(p.character)
+						}
+						if (Settings.ApplicationRevisionNumber > 10960) {
+							if (p.order >= 0) {
+								order(p.order)
+							}
+						}
+						if (p.image) {
+							thumb(p.image)
+						}
+					}
+				} else if (p.director) {
+					director(p.name)
+				} else if (p.writer || p.department == 'Writing') {
+					credits(p.name)
+				}
+			}
+
 			fileinfo {
+				name(movieFile?.name)
+				size(movieFile?.length())
+
 				streamdetails {
 					mi?.Video.each{ s ->
 						video {
-							codec((s.'Encoded_Library/Name' ?: s.'CodecID/Hint' ?: s.'Format').replaceAll(/[ ].+/, '').trim())
-							aspect(s.'DisplayAspectRatio')
+							codec(s.'Encoded_Library/Name' ?: s.'CodecID/Hint' ?: s.'Format')
+							aspect(s.'DisplayAspectRatio/String')
 							width(s.'Width')
 							height(s.'Height')
+							hdrtype(s.'HDR_Format_Commercial' ?: s.'HDR_Format')
+							framerate(s.'FrameRate')
+							bitrate(s.'BitRate')
+							duration(s.'Duration'.toFloat().div(60000).round(4))
 						}
 					}
 					mi?.Audio.each{ s ->
 						audio {
-							codec((s.'CodecID/Hint' ?: s.'Format').replaceAll(/\p{Punct}/, '').trim())
+							codec(s.'CodecID/Hint' ?: s.'Format')
 							language(s.'Language/String3')
 							channels(s.'Channel(s)_Original' ?: s.'Channel(s)')
+							bitrate(s.'BitRate')
 						}
 					}
 					mi?.Text.each{ s ->
-						subtitle { language(s.'Language/String3') }
+						subtitle {
+							codec(s.'Format')
+							language(s.'Language/String3')
+						}
 					}
 				}
 			}
-			imdb(id:"tt" + (i.imdbId ?: 0).pad(7), "http://www.imdb.com/title/tt" + (i.imdbId ?: 0).pad(7))
-			tmdb(id:i.id, "http://www.themoviedb.org/movie/${i.id}")
 
-			/** <trailer> element not supported due to lack of specification on acceptable values for both Plex and Kodi **/
+			if (i.imdbId) {
+				imdb(id: 'tt' + i.imdbId.pad(7), 'https://www.imdb.com/title/tt' + i.imdbId.pad(7))
+			}
+			tmdb(id: i.id, 'https://www.themoviedb.org/movie/' + i.id)
+			uniqueid(type: 'tmdb', default: 'true', i.id)
 		}
 	}
 	xml.saveAs(outputFile)
@@ -333,7 +466,7 @@ def fetchMovieArtworkAndNfo(movieDir, movie, movieFile = null, override = false,
 		def movieInfo = TheMovieDB.getMovieInfo(movie, locale, true)
 
 		// fetch nfo
-		fetchMovieNfo(movieDir.resolve('movie.nfo'), movieInfo, movieFile)
+		fetchMovieNfo(movieDir.resolve('movie.nfo'), movie, movieInfo, movieFile)
 
 		// primary poster as folder image
 		fetchPrimaryPoster(movieInfo.poster, movieDir.resolve('folder.jpg'))
