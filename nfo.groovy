@@ -16,6 +16,7 @@ def fetchMovieNfo(m, f) {
 			id(i.id)
 			title(i.name)
 			originaltitle(i.originalName)
+			sorttitle((i.collection && i.released ? [i.collection, i.released, i.name] : [i.name, i.released]).findResults{ it?.toString()?.sortName() }.join(' :: '))
 			year(i.released?.year)
 			premiered(i.released)
 			mpaa(i.certification)
