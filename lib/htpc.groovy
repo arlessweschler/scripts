@@ -240,9 +240,9 @@ def getTVDBID(series, locale) {
 		return TheTVDB.getSeriesInfo(series.id, locale)
 	}
 	if (series.database =~ /TheMovieDB/) {
-		def eid = TheMovieDB_TV.getExternalIds(series.id).'tvdb_id'
-		if (eid) {
-			return TheTVDB.getSeriesInfo(eid as int, locale)
+		def sid = series.getExternalId(/TheTVDB/)
+		if (sid) {
+			return TheTVDB.getSeriesInfo(sid, locale)
 		}
 	}
 	return null
