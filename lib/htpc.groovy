@@ -236,14 +236,9 @@ def fetchSeriesNfo(outputFile, s, locale) {
 }
 
 def getTVDBID(series, locale) {
-	if (series.database =~ /TheTVDB/) {
-		return TheTVDB.getSeriesInfo(series.id, locale)
-	}
-	if (series.database =~ /TheMovieDB/) {
-		def sid = series.getExternalId(/TheTVDB/)
-		if (sid) {
-			return TheTVDB.getSeriesInfo(sid, locale)
-		}
+	def sid = series.getExternalId(/TheTVDB/)
+	if (sid) {
+		return TheTVDB.getSeriesInfo(sid, locale)
 	}
 	return null
 }
