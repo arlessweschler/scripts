@@ -165,6 +165,15 @@ println 'Groovy: ' + GroovySystem.Version
 // Java(TM) SE Runtime Environment 1.6.0_30 (headless)
 println 'JRE: ' + Settings.JavaRuntimeIdentifier
 
+try {
+	def runtime = sys.'java.version'.split(/\D+/)[0] as int
+	if (runtime < 17) {
+		log.warning "WARNING: Future releases of FileBot will require JRE 17 or higher"
+	}
+} catch(Throwable error) {
+	// ignore
+}
+
 // OpenJFX 14.0.2.1+1
 ['javafx.runtime.version', 'javafx.runtime.error'].each{ property ->
 	if (sys[property]) {
