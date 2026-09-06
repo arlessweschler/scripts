@@ -48,7 +48,7 @@ args.files.each{ f ->
 	try {
 		f.mediaInfo.each{ kind ->
 			kind.each{ stream ->
-				log.finest "\n[${kind}]"
+				log.finest "\n[${stream.StreamKind}]"
 
 				// find optimal padding
 				def pad = stream.keySet().flatten().collect{ it.length() }.max()
