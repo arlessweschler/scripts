@@ -426,7 +426,7 @@ def fetchMovieNfo(outputFile, m, i, movieFile) {
 							hdrtype(s.'HDR_Format_Commercial' ?: s.'HDR_Format')
 							framerate(s.'FrameRate')
 							bitrate(s.'BitRate')
-							duration(s.'Duration'?.toFloat()?.div(60000)?.round(4))
+							duration(s.'Duration'?.toFloat()?.div(60000)?.round())
 						}
 					}
 					mi?.Audio.each{ s ->
