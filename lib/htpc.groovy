@@ -85,9 +85,9 @@ def refreshPlexLibrary(server, port, token, files) {
 
 
 /**
- * Jellyfin helpers
+ * Emby helpers
  */
-def refreshJellyfinLibrary(server, port, token) {
+def refreshEmbyLibrary(server, port, token) {
 	// use HTTPS if hostname is specified, use HTTP if IP is specified
 	def protocol = server ==~ /localhost|[0-9.:]+/ ? 'http' : 'https'
 	def url = "${protocol}://${server}:${port ?: htpc.emby[protocol]}/Library/Refresh"
@@ -96,6 +96,18 @@ def refreshJellyfinLibrary(server, port, token) {
 	}
 	log.finest "POST: $url"
 	new URL(url).post([:], [:])
+}
+
+
+/**
+ * Jellyfin helpers
+ */
+def refreshJellyfinLibrary(server, port, token) {
+	// use HTTPS if hostname is specified, use HTTP if IP is specified
+	def protocol = server ==~ /localhost|[0-9.:]+/ ? 'http' : 'https'
+	def url = "${protocol}://${server}:${port ?: htpc.emby[protocol]}/Library/Refresh"
+	log.finest "POST: $url"
+	new URL(url).post([:], ['Authorization':'MediaBrowser Token="' + token + '"'])
 }
 
 

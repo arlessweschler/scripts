@@ -57,7 +57,8 @@ exec      = tryQuietly{ exec.toString() }
 // array of kodi/plex/jellyfin hosts
 kodi = tryQuietly{ kodi.split(/[ ,;|]+/)*.split(/:(?=\d+$)/).collect{ it.length >= 2 ? [host: it[0], port: it[1] as int] : [host: it[0]] } }
 plex = tryQuietly{ plex.split(/[ ,;|]+/)*.split(/:/).collect{ it.length >= 3 ? [host: it[0], port: it[1] as int, token: it[2]] : it.length >= 2 ? [host: it[0], token: it[1]] : [host: it[0]] } }
-jellyfin = tryQuietly{ allOf{jellyfin}{emby}*.split(/[ ,;|]+/).flatten()*.split(/:/).collect{ it.length >= 3 ? [host: it[0], port: it[1] as int, token: it[2]] : it.length >= 2 ? [host: it[0], token: it[1]] : [host: it[0]] } }
+emby = tryQuietly{ emby.split(/[ ,;|]+/)*.split(/:/).collect{ it.length >= 3 ? [host: it[0], port: it[1] as int, token: it[2]] : it.length >= 2 ? [host: it[0], token: it[1]] : [host: it[0]] } }
+jellyfin = tryQuietly{ jellyfin.split(/[ ,;|]+/)*.split(/:/).collect{ it.length >= 3 ? [host: it[0], port: it[1] as int, token: it[2]] : it.length >= 2 ? [host: it[0], token: it[1]] : [host: it[0]] } }
 
 // extra options, myepisodes updates and email notifications
 extractFolder      = tryQuietly{ extractFolder as File }
@@ -100,7 +101,7 @@ animeMapper = any{ _args.mapper }{ animeDB ==~ /(?i:AniDB)/ ? null : 'allOf{ epi
 
 
 // include artwork/nfo, pushover/pushbullet and ant utilities as required
-if (artwork || kodi || plex || jellyfin) { include('lib/htpc') }
+if (artwork || kodi || plex || emby || jellyfin) { include('lib/htpc') }
 if (pushover || pushbullet || gmail || mail || discord) { include('lib/web') }
 
 
@@ -590,9 +591,17 @@ if (renameLog.size() > 0) {
 	}
 
 	// make Jellyfin scan for new content
+	if (emby) tryLogCatch {
+		emby.each{ instance ->
+			log.fine "Notify Emby [$instance.host]"
+			refreshEmbyLibrary(instance.host, instance.port, instance.token)
+		}
+	}
+
+	// make Jellyfin scan for new content
 	if (jellyfin) tryLogCatch {
 		jellyfin.each{ instance ->
-			log.fine "Notify Emby / Jellyfin [$instance.host]"
+			log.fine "Notify Jellyfin [$instance.host]"
 			refreshJellyfinLibrary(instance.host, instance.port, instance.token)
 		}
 	}
